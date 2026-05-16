@@ -32,17 +32,17 @@ def model_termiczny(Tinv, I0, A, Ea):
     T=1.0/Tinv # Tinv  - odwrotnosc temperatury
     return I0/(1+A*np.exp(-Ea/(kB*T)))
 
-with open("xc.txt", "r") as fx:
+with open("/workspaces/analiza-widm-pl/OLA/TEMPERATURA/xt.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
 pliki = [
-    "t1.txt",   # 7 K
-    "t2.txt",   # 20 K
-    "t3.txt",   # 40 K
-    "t4.txt",   # 60 K
-    "t5.txt",   # 80 K
-    "t6.txt",   # 100 K
-    "t7.txt"    # 120 K
+    "/workspaces/analiza-widm-pl/OLA/TEMPERATURA/t1.txt",   # 7 K
+    "/workspaces/analiza-widm-pl/OLA/TEMPERATURA/t2.txt",   # 20 K
+    "/workspaces/analiza-widm-pl/OLA/TEMPERATURA/t3.txt",   # 40 K
+    "/workspaces/analiza-widm-pl/OLA/TEMPERATURA/t4.txt",   # 60 K
+    "/workspaces/analiza-widm-pl/OLA/TEMPERATURA/t5.txt",   # 80 K
+    "/workspaces/analiza-widm-pl/OLA/TEMPERATURA/t6.txt",   # 100 K
+    "/workspaces/analiza-widm-pl/OLA/TEMPERATURA/t7.txt"    # 120 K
 ]
 
 temperatury = np.array([7, 20, 40, 60, 80, 100, 120])
@@ -253,4 +253,5 @@ plt.grid(which='minor', linestyle='--', linewidth=0.5, color='grey')
 plt.legend(fontsize=13)
 plt.tight_layout()
 plt.show()
-
+plt.savefig("wykres12.png")
+print("Zapisano wykres")
