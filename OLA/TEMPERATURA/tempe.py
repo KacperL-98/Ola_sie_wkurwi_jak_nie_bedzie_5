@@ -1,0 +1,1 @@
+print("Temperature: 25°C")
