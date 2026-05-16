@@ -30,11 +30,11 @@ def wiele_lorentzow(x, *params):
 def pole_lorentza(A, gamma):
     return np.pi*A*gamma
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/xc.txt", "r") as fx:
+with open("/workspaces/analiza/OLA/MOC/xc.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
 pliki = [
-    "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/1a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/2a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/3a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/4a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/5a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/6a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/7a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/8a.txt"
+    "/workspaces/analiza/OLA/MOC/1a.txt", "/workspaces/analiza/OLA/MOC/2a.txt", "/workspaces/analiza/OLA/MOC/3a.txt", "/workspaces/analiza/OLA/MOC/4a.txt", "/workspaces/analiza/OLA/MOC/5a.txt", "/workspaces/analiza/OLA/MOC/6a.txt", "/workspaces/analiza/OLA/MOC/7a.txt", "/workspaces/analiza/OLA/MOC/8a.txt"
 ]
 
 #os x (moce laserow)
