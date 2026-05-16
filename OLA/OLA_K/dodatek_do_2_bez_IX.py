@@ -21,10 +21,10 @@ def triple_lorentzian(x,
     )
 
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/x4.txt", "r") as fx:
+with open("/workspaces/analiza/OLA/x4.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/y4.txt", "r") as fy:
+with open("/workspaces/analiza/OLA/y4.txt", "r") as fy:
     y_data = np.array([float(line.strip()) for line in fy])
 
 
