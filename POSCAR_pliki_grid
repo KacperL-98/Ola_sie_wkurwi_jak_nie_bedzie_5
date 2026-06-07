@@ -1,0 +1,301 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# wczytywanie, otwieranie pliku
+def read_poscar(filename):
+    """
+    Wczytuje plik POSCAR i zamienia go na dane liczbowe.
+    """
+
+    
+    with open(filename, "r") as f:
+
+        lines = [line.strip() for line in f.readlines()]
+    
+    # ladowanie pliku do czytania
+
+    skala = float(lines[1])
+
+    # wektory sieci wypisane
+    wektory = np.array([list(map(float, lines[2].split())), list(map(float, lines[3].split())), list(map(float, lines[4].split()))]) * skala
+
+    atomy_sym = lines[5].split() # jakie rodzaje mamy atomy i ile 
+    atomy_ile = list(map(int, lines[6].split()))
+    atomy_total = sum(atomy_ile)
+
+    wsp_typ = lines[7].lower()
+    wsp = []
+
+    for i in range(atomy_total):
+        wsp.append(list(map(float, lines[8 + i].split()[:3])))
+
+    wsp = np.array(wsp)
+
+    if wsp_typ.startswith("direct"):
+        wspolrzedne = wsp @ wektory
+    else:
+        wspolrzedne = wsp
+
+    return wektory, atomy_sym, atomy_ile, wspolrzedne
+
+
+# od komorki 
+def build_atom_table(atomy_sym, atomy_ile, wspolrzedne):
+
+    atom_kom_el = []
+    # np. (W,1),(S,2)
+    for name, n in zip(atomy_sym, atomy_ile):
+
+        # dodajemy W 1 raz, S 2 razy itp
+        atom_kom_el.extend([name] * n)
+    atom_kom_el = np.array(atom_kom_el)
+
+    return atom_kom_el
+
+
+# zbieranie po osi z
+def zrob_warstwy(atom_kom_el, wspolrzedne, odl_warstwy=2.5):
+
+    z = wspolrzedne[:, 2] #wsp z atomow
+    sort_idx = np.argsort(z)
+    z_sorted = z[sort_idx]
+    warstwy = []
+    i_war = [sort_idx[0]]
+
+    for i in range(1, len(z_sorted)):
+
+        dz = z_sorted[i] - z_sorted[i - 1]  # roznica wysokosci miedzy atomami obok siebie
+
+        if dz < odl_warstwy:
+            i_war.append(sort_idx[i])
+        else:
+            warstwy.append(i_war)
+            i_war = [sort_idx[i]]
+
+    warstwy.append(i_war)
+    return warstwy
+
+
+def war_param(atom_kom_el, wspolrzedne, warstwy):
+
+    res = [] # raport parametrow dla kazdej warstwy
+
+    for i, layer in enumerate(warstwy):
+
+        layer_coords = wspolrzedne[layer]
+        typy_iwar = atom_kom_el[layer]
+        z_vals = layer_coords[:, 2] # porownywanie tylko wartosci z
+
+        # min i maks Z dla jednej warstwy,grubosc, srodek warstwy
+        z_min = np.min(z_vals)
+        z_max = np.max(z_vals)
+        grubosc = z_max - z_min
+        z_mean = np.mean(z_vals)
+        res.append({"layer_id": i,"indices": layer,"z_min": z_min, "z_max": z_max, "grubosc": grubosc, "z_mean": z_mean, "atom_kom_el": typy_iwar})
+
+    return res
+
+
+# odleglosci miedzy warstwami
+def war_odl(res):
+
+    odl = []
+    for i in range(len(res) - 1):
+
+        upper = res[i + 1]
+        lower = res[i]
+
+        d = upper["z_min"] - lower["z_max"] # odleglowc miedzy warstwami
+
+        odl.append(d)
+
+    return odl
+
+def plot_structure(atom_kom_el, wspolrzedne, warstwy):
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    pierwiastki = np.unique(atom_kom_el)
+
+    for atom in pierwiastki:
+
+        mask = atom_kom_el == atom
+
+        # scatter plot 3D
+        ax.scatter(wspolrzedne[mask, 0], wspolrzedne[mask, 1],wspolrzedne[mask, 2], label=atom, s=110) #XYZ 3D
+
+    for i, layer in enumerate(warstwy):
+
+        layer_coords = wspolrzedne[layer]
+
+        #srednia X Y Z
+        x_mean = np.mean(layer_coords[:, 0])
+        y_mean = np.mean(layer_coords[:, 1])
+        z_mean = np.mean(layer_coords[:, 2])
+        ax.text(x_mean, y_mean, z_mean, f"Layer {i}")
+    ax.set_xlabel("x [Å]")
+    ax.set_ylabel("y [Å]")
+    ax.set_zlabel("z [Å]")
+
+    ax.set_title("POSCAR wizualizacja")
+    ax.legend()
+    plt.show()
+
+
+# grid 2d
+def make_grid(wspolrzedne, resolution=200):
+
+    # wszystkie i zakres X Y
+    x = wspolrzedne[:, 0]
+    y = wspolrzedne[:, 1]
+    xmin, xmax = np.min(x), np.max(x)
+    ymin, ymax = np.min(y), np.max(y)
+
+    # siatka punktow X i Y
+    gx = np.linspace(xmin, xmax, resolution)
+    gy = np.linspace(ymin, ymax, resolution)
+    X, Y = np.meshgrid(gx, gy)
+    return X, Y
+
+# powiela komorki z pliku poscar, 
+# nie jest super dokladne jesli chodzi o to
+nx, ny, nz = 2, 2, 1
+make_file = False
+
+def powiel_siec(wektory, atom_types, wspolrzedne, nx=10, ny=10, nz=10):
+
+    new_coords = []
+    new_types = []
+
+    a1 = wektory[0]
+    a2 = wektory[1]
+    a3 = wektory[2]
+#dla kazdego kierunku osobno x y z
+    for ip in range(nx):
+        for iq in range(ny):
+            for ir in range(nz):
+
+                shift = ip * a1 + iq * a2 + ir * a3
+
+                for coord, t in zip(wspolrzedne, atom_types):
+                    new_coords.append(coord + shift)
+                    new_types.append(t)
+
+    return np.array(new_coords), np.array(new_types)
+
+
+#robi nowy plik poscar z wpisana na twardo wielokrotnoscia pliku w kazdym kierunku
+"""
+def nowy_poscar(filename, wektory, atom_types, wspolrzedne):
+
+    unique, counts = np.unique(atom_types, return_counts=True)
+
+    with open(filename, "w") as f:
+
+        f.write("Generated new poscar\n")
+        f.write("1.0\n")
+
+        for v in wektory:
+            f.write(f"{v[0]} {v[1]} {v[2]}\n")
+
+        f.write(" ".join(unique) + "\n")
+        f.write(" ".join(map(str, counts)) + "\n")
+
+        f.write("Cartesian\n")
+
+        for c in wspolrzedne:
+            f.write(f"{c[0]} {c[1]} {c[2]}\n")
+"""
+
+# plotowanie nowej komorki
+def plot_mul_kom(wektory, coords, atom_types, nx, ny, nz):
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    unique_atoms = np.unique(atom_types)
+
+    # atomy
+    for atom in unique_atoms:
+        mask = atom_types == atom
+        ax.scatter(coords[mask,0], coords[mask,1], coords[mask,2], label=atom, s=20)
+
+    a1, a2, a3 = wektory
+    def krawedzie(origin):
+        #wierzcholki
+        w0 = origin
+        w1 = origin + a1
+        w2 = origin + a2
+        w3 = origin + a3
+        w4 = origin + a1 + a2
+        w5 = origin + a1 + a3
+        w6 = origin + a2 + a3
+        w7 = origin + a1 + a2 + a3
+
+        # krawedzie
+        krawedzie = [(w0, w1), (w0, w2),(w0, w3),(w1, w4),(w1, w5),(w2, w4),
+                 (w2, w6),(w3, w5), (w3, w6), (w4, w7),(w5, w7), (w6, w7)]
+
+        for e in krawedzie:
+            ax.plot(
+                [e[0][0], e[1][0]], [e[0][1], e[1][1]], [e[0][2], e[1][2]], color="black", linewidth=0.6, alpha=0.6)
+    # siatka komórek
+    for i in range(nx + 1):
+        for j in range(ny + 1):
+            for k in range(nz + 1):
+
+                origin = i*a1 + j*a2 + k*a3
+                krawedzie(origin)
+    ax.legend()
+    plt.show()
+    
+# uruchomienie wszystkich funkcji
+
+filename = r"C:\Users\Bartosz\Downloads\POSCAR.txt"
+
+wektory, atomy_sym, atomy_ile, wspolrzedne = read_poscar(filename)# wczytanie pliku
+#zmapowanie atomow
+atom_kom_el = build_atom_table(atomy_sym, atomy_ile, wspolrzedne)
+
+# grupowanie w warstwy
+warstwy = zrob_warstwy(atom_kom_el, wspolrzedne, odl_warstwy=2.5)
+
+# paramtetry warstw
+res = war_param(atom_kom_el, wspolrzedne, warstwy)
+
+#odleglosci miedzy warstwami
+odl = war_odl(res)
+
+make_grid(wspolrzedne,resolution=200)
+super_coords, super_types = powiel_siec(wektory, atom_kom_el, wspolrzedne, nx, ny, nz)
+plot_mul_kom(wektory, super_coords, super_types, nx, ny, nz)
+
+"""
+if make_file:
+    nowy_poscar("POSCAR_supercell", wektory, super_types, super_coords)
+"""
+# printowanie
+print("Warstwy w pliku")
+
+for layer in res:
+    print(f"\nWarstwa {layer['layer_id']}")
+    print(f"z_min      = {layer['z_min']:.3f} Å")
+    print(f"z_max      = {layer['z_max']:.3f} Å")
+    print(f"grubosc    = {layer['grubosc']:.3f} Å")
+    print(f"srodek z   = {layer['z_mean']:.3f} Å")
+    print(f"atomy      = {np.unique(layer['atom_kom_el'])}")
+
+# odstepy miedzy warstwami
+
+print("Odleglosci")
+for i, d in enumerate(odl):
+    print(f"Layer {i} -> Layer {i+1} : {d:.3f} Å")
+
+
+X, Y = make_grid(wspolrzedne) #grid 2d
+
+print("Grid shape:")
+print(X.shape)
+plot_structure(atom_kom_el, wspolrzedne, warstwy)
