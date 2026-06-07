@@ -1,0 +1,362 @@
+# -*- coding: utf-8 -*-
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+from scipy.integrate import quad, simpson
+from scipy.optimize import minimize_scalar
+from scipy.special import j0
+
+plt.rcParams["font.family"] = "Times New Roman"
+
+# operacje na  plikach 
+
+POSCAR_PATH = r"C:\Users\Bartosz\Downloads\POSCAR.txt"
+OUTPUT_FILE = r"C:\Users\Bartosz\Downloads\exciton_on_atoms.dat"
+
+# ==========================================================
+# STAŁE
+# ==========================================================
+
+HA_TO_EV = 27.2114
+BOHR_TO_ANG = 0.529177
+# ==========================================================
+# PARAMETRY HETEROSTRUKTURY
+# ==========================================================
+
+eps_hbn = 4.9
+eps_ws2  = 3.68
+eps_wse2 = 5.89
+# Z POSCAR
+d_ws2_ang  = 3.098
+d_wse2_ang = 3.414
+
+# środki warstw
+
+z_ws2  = 3.463
+z_wse2 = 10.393
+
+# odległość międzywarstwowa
+
+d_inter_ang = abs(z_wse2-z_ws2)
+# ==========================================================
+# MASY
+# ==========================================================
+me_ws2_K = 0.27
+mh_ws2_K = 0.32
+
+me_wse2_K = 0.29
+mh_wse2_K = 0.36
+
+
+def mu(me, mh):
+    return me * mh / (me + mh)
+
+mu_ws2  = mu(me_ws2_K,mh_ws2_K)
+mu_wse2 = mu(me_wse2_K,mh_wse2_K)
+
+mu_inter = mu(me_ws2_K,mh_wse2_K)
+
+# ==========================================================
+# SIATKA
+# ==========================================================
+
+r_max = 400
+Nr = 400
+Ntheta = 360
+
+r = np.linspace(1e-6, r_max, Nr)
+theta = np.linspace(0, 2*np.pi, Ntheta)
+
+R, Theta = np.meshgrid(r, theta, indexing="ij")
+X = R*np.cos(Theta)
+Y = R*np.sin(Theta)
+
+dr = r[1] - r[0]
+dtheta = theta[1] - theta[0]
+
+# ==========================================================
+# MODEL εeff(q)
+# ==========================================================
+
+def gamma_plus(q):
+    return ((1 + np.exp(-2*d_wse2_ang*q)) * eps_wse2 +
+            (1 - np.exp(-2*d_wse2_ang*q)) * eps_hbn)
+
+def gamma_minus(q):
+    return ((1 - np.exp(-2*d_wse2_ang*q)) * eps_wse2 +
+            (1 + np.exp(-2*d_wse2_ang*q)) * eps_hbn)
+
+def A_q(q):
+    gp = gamma_plus(q)
+    gm = gamma_minus(q)
+
+    return ((1 - np.exp(-2*d_ws2_ang*q)) *
+            (eps_ws2**2 * gp + eps_hbn * eps_wse2 * gm) +
+            (1 + np.exp(-2*d_ws2_ang*q)) *
+            (eps_hbn * eps_ws2 * gp + eps_ws2 * eps_wse2 * gm))
+
+def B_q(q):
+    t1 = ((1 - np.exp(-d_ws2_ang*q)) * eps_hbn +
+          (1 + np.exp(-d_ws2_ang*q)) * eps_ws2)
+
+    t2 = ((1 + np.exp(-d_wse2_ang*q)) * eps_wse2 +
+          (1 - np.exp(-d_wse2_ang*q)) * eps_hbn)
+
+    return 2 * t1 * t2
+
+def eps_eff(q):
+    return A_q(q) / B_q(q)
+
+# ==========================================================
+# POTENCJAŁY 
+# ==========================================================
+
+q = np.linspace(1e-6, 60, 4000)
+eps_q = eps_eff(q)
+dq = q[1] - q[0]
+
+def V_real(rval, d_ang):
+    integrand = lambda q: (np.exp(-q * d_ang) * j0(q * rval) / eps_eff(q))
+    val, _ = quad(
+        integrand,
+        1e-5,
+        20.0,
+        limit=300
+    )
+    return -val
+
+def build_potential(d_ang):
+
+    V = np.zeros_like(r)
+
+    for i,rr in enumerate(r):
+
+        V[i] = V_real(rr,d_ang)
+
+    return V
+
+print("Liczenie potencjałów...")
+
+V_ws2_r   = build_potential(0.0)
+V_wse2_r  = build_potential(0.0)
+V_inter_r = build_potential(d_inter_ang)
+
+def Vgrid_from_radial(Vr):
+    return np.interp(R, r, Vr)
+
+# ==========================================================
+# NARZĘDZIA NUMERYCZNE
+# ==========================================================
+
+def integrate2d(f):
+    tmp = simpson(f, theta, axis=1)
+    return simpson(tmp, r)
+
+def normalize(psi):
+
+    rho = np.abs(psi)**2 * R
+
+    I_theta = simpson(
+        rho,
+        theta,
+        axis=1
+    )
+
+    I = simpson(
+        I_theta,
+        r
+    )
+
+    return psi/np.sqrt(I)
+
+
+# ==========================================================
+# LAPLACIAN
+# ==========================================================
+
+def laplacian(psi):
+
+    dpsi_dr = np.zeros_like(psi)
+    dpsi_dr[1:-1] = (psi[2:] - psi[:-2]) / (2*dr)
+
+    term_r = np.zeros_like(psi)
+    term_r[1:-1] = ((R[2:] * dpsi_dr[2:] -
+                     R[:-2] * dpsi_dr[:-2]) / (2*dr)) / R[1:-1]
+
+    term_theta = np.zeros_like(psi)
+    term_theta[:,1:-1] = (
+        psi[:,2:] - 2*psi[:,1:-1] + psi[:,:-2]
+    ) / dtheta**2
+
+    lap = term_r + term_theta/R**2
+
+    return lap
+# ==========================================================
+# FUNKCJE PRÓBNE
+# ==========================================================
+
+
+def psi_1s(b):
+
+    return normalize(
+        np.exp(-R/b)
+    )
+
+def psi_2s(b2,b1):
+
+    d = (b1+b2)/(2*b1)
+
+    return normalize(
+        (1-d*R/b2)
+        *
+        np.exp(-R/b2)
+    )
+
+def psi_2px(b):
+
+    return normalize(
+        R*np.cos(Theta)
+        *
+        np.exp(-R/b)
+    )
+
+def psi_2py(b):
+
+    return normalize(
+        R*np.sin(Theta)
+        *
+        np.exp(-R/b)
+    )
+
+# ==========================================================
+# SOLVER WARIACYJNY
+# ==========================================================
+
+class ExcitonSolver:
+
+    def __init__(self, mu_eff, Vr):
+        self.mu = mu_eff
+        self.Vgrid = Vgrid_from_radial(Vr)
+
+    def energy(self, psi):
+        lap = laplacian(psi)
+        Hpsi = -(1/(2*self.mu))*lap + self.Vgrid*psi
+
+        num = integrate2d(np.conjugate(psi)*Hpsi*R)
+        den = integrate2d(np.conjugate(psi)*psi*R)
+
+        return (num/den).real
+
+    def solve(self):
+
+        res1 = minimize_scalar(lambda b: self.energy(psi_1s(b)),
+                                bounds=(0.1,300), method="bounded")
+
+        res2 = minimize_scalar(lambda b: self.energy(psi_2px(b)),
+                                bounds=(0.1,300), method="bounded")
+
+        return {
+            "E1s": res1.fun * HA_TO_EV,
+            "E2p": res2.fun * HA_TO_EV,
+            "b1": res1.x
+        }
+
+# POSCAR wczytywanie
+
+def poscal_read(filename):
+
+    with open(filename, "r") as f:
+        lines = [l.strip() for l in f.readlines() if l.strip()]
+
+    scale = float(lines[1])
+
+    lattice = np.array([list(map(float, lines[2].split())),list(map(float, lines[3].split())),list(map(float, lines[4].split()))]) * scale
+
+    jed = lines[5].split()
+    counts = list(map(int, lines[6].split()))
+
+    wsp = np.array([list(map(float, lines[8+i].split()[:3]))for i in range(sum(counts))])
+
+    if "direct" in lines[7].lower():
+        wsp = wsp @ lattice
+
+    atom_types = []
+    for sp, c in zip(jed, counts):
+        atom_types += [sp]*c
+
+    return atom_types, wsp
+
+#projetkowanie
+r_grid = r
+
+def proj_str(poscar_file, psi):
+
+    atom_types, wsp = poscal_read(poscar_file)
+
+    density_r = simpson(np.abs(psi)**2, theta, axis=1)
+
+    results = []
+
+    for t,(x,y,z) in zip(atom_types, wsp):
+
+        r_atom = np.sqrt(x**2 + y**2)
+        val = np.interp(r_atom, r_grid, density_r)
+
+        results.append((t,x,y,z,val))
+
+    return results
+
+
+def proj_save(data, filename):
+
+    with open(filename,"w") as f:
+        for t,x,y,z,v in data:
+            f.write(f"{t} {x:.6f} {y:.6f} {z:.6e} {v:.8e}\n")
+
+# ==========================================================
+# URUCHOMIENIE
+# ==========================================================
+
+solver_ws2 = ExcitonSolver(mu_ws2, V_ws2_r)
+solver_wse2 = ExcitonSolver(mu_wse2, V_wse2_r)
+solver_inter = ExcitonSolver(mu_inter, V_inter_r)
+
+res_ws2 = solver_ws2.solve()
+
+print("WS2:", res_ws2)
+
+b1 = res_ws2["b1"]
+
+psi1s_opt = psi_1s(b1)
+psi2px_opt = psi_2px(b1)
+
+
+proj = proj_str(POSCAR_PATH, psi1s_opt)
+proj_save(proj, OUTPUT_FILE)
+
+print("Saved:", OUTPUT_FILE)
+
+# ustawienia wykresu
+X, Y = R*np.cos(Theta), R*np.sin(Theta)
+
+P1s = 2*np.pi*r*np.mean(np.abs(psi1s_opt)**2, axis=1)
+P2px = 2*np.pi*r*np.mean(np.abs(psi2px_opt)**2, axis=1)
+
+plt.figure()
+plt.plot(r,P1s,label="1s")
+plt.plot(r,P2px,label="2px")
+plt.legend()
+plt.grid()
+plt.show()
+
+states = [(np.abs(psi1s_opt)**2,"1s"),
+          (np.abs(psi2px_opt)**2,"2px")]
+
+for rho,name in states:
+    plt.figure()
+    plt.contourf(X,Y,rho,100)
+    plt.title(name)
+    plt.colorbar()
+    plt.axis("equal")
+    plt.show()
