@@ -8,16 +8,16 @@ from scipy.special import j0
 
 plt.rcParams["font.family"] = "Times New Roman"
 
-# ==========================================================
+
 # STAŁE
-# ==========================================================
+
 
 HA_TO_EV = 27.2114
 BOHR_TO_ANG = 0.529177
 
-# ==========================================================
+
 # PARAMETRY HETEROSTRUKTURY
-# ==========================================================
+
 
 eps_hbn = 4.9
 
@@ -39,9 +39,9 @@ d_intra_ws2 = abs(z_ws2-z_ws2)
 d_intra_wse2 = abs(z_wse2-z_wse2)
 d_inter_ang = abs(z_wse2-z_ws2)
 
-# ==========================================================
+
 # MASY
-# ==========================================================
+
 
 me_ws2_K = 0.27
 mh_ws2_K = 0.32
@@ -57,9 +57,8 @@ mu_wse2 = mu(me_wse2_K,mh_wse2_K)
 
 mu_inter = mu(me_wse2_K,mh_ws2_K)
 
-# ==========================================================
-# SIATKA
-# ==========================================================
+
+
 
 r_max = 400.0
 
@@ -77,9 +76,9 @@ Y = R*np.sin(Theta)
 dr = r[1]-r[0]
 dtheta = theta[1]-theta[0]
 
-# ==========================================================
-# MODEL εeff(q)
-# ==========================================================
+
+# funcja dielektryczna εeff(q)
+
 
 def gamma_plus(q):
 
@@ -140,9 +139,9 @@ def eps_eff(q):
 
     return A_q(q)/B_q(q)
 
-# ==========================================================
+
 # POTENCJAŁY
-# ==========================================================
+
 
 def V_real(rval,d_ang):
 
@@ -179,17 +178,12 @@ V_ws2_r   = build_potential(d_intra_ws2)
 V_wse2_r  = build_potential(d_intra_wse2)
 V_inter_r = build_potential(d_inter_ang)
 
-# ==========================================================
-# INTERPOLACJA
-# ==========================================================
+
 
 def Vgrid_from_radial(Vr):
 
     return np.interp(R,r,Vr)
 
-# ==========================================================
-# NARZĘDZIA NUMERYCZNE
-# ==========================================================
 
 def integrate2d(f):
 
@@ -221,9 +215,7 @@ def normalize(psi):
 
     return psi/np.sqrt(I)
 
-# ==========================================================
-# LAPLACJAN
-# ==========================================================
+
 
 def laplacian(psi):
 
@@ -257,9 +249,9 @@ def laplacian(psi):
 
     return lap
 
-# ==========================================================
+
 # FUNKCJE PRÓBNE
-# ==========================================================
+
 
 def psi_1s(b):
 
@@ -293,9 +285,9 @@ def psi_2py(b):
         np.exp(-R/b)
     )
 
-# ==========================================================
-# SOLVER WARIACYJNY
-# ==========================================================
+
+# solver
+
 
 class ExcitonSolver:
 
@@ -348,9 +340,7 @@ class ExcitonSolver:
         b1 = res1.x
         E1 = res1.fun
 
-        # --------------------------------------------------
-        # 2s
-        # --------------------------------------------------
+
 
         res2s = minimize_scalar(
             lambda b2:
@@ -364,9 +354,7 @@ class ExcitonSolver:
         b2 = res2s.x
         E2s = res2s.fun
 
-        # --------------------------------------------------
-        # 2px
-        # --------------------------------------------------
+       
 
         respx = minimize_scalar(
             lambda b:
@@ -380,9 +368,7 @@ class ExcitonSolver:
         bpx = respx.x
         Epx = respx.fun
 
-        # --------------------------------------------------
-        # 2py
-        # --------------------------------------------------
+    
 
         respy = minimize_scalar(
             lambda b:
@@ -405,9 +391,7 @@ class ExcitonSolver:
 
         Ebind = 9.0 * (0.5 * Es_px + 0.5 * Es_py) / 8.0
 
-        # --------------------------------------------------
-        # funkcje falowe
-        # --------------------------------------------------
+
 
         psi1s_opt = psi_1s(b1)
         psi2s_opt = psi_2s(b2, b1)
@@ -434,9 +418,7 @@ class ExcitonSolver:
             "psi2px": psi2px_opt,
             "psi2py": psi2py_opt
         }
-# ==========================================================
-# URUCHOMIENIE
-# ==========================================================
+
 
 solver_ws2 = ExcitonSolver(
     mu_ws2,
@@ -524,9 +506,6 @@ for system_name, res in systems:
         height_ratios=[1,1,1,0.4]
     )
 
-    # ==========================================
-    # |psi|² 3D
-    # ==========================================
 
     for i,(rho,title) in enumerate(states_rho):
 
@@ -551,9 +530,7 @@ for system_name, res in systems:
 
         ax.view_init(25,-60)
 
-    # ==========================================
-    # psi 3D
-    # ==========================================
+    
 
     for i,(psi,title) in enumerate(states_psi):
 
@@ -561,8 +538,7 @@ for system_name, res in systems:
 
         ax = fig.add_subplot(
             gs[1,i],
-            projection="3d"
-        )
+            projection="3d")
 
         ax.plot_surface(
             X,
@@ -571,22 +547,17 @@ for system_name, res in systems:
             cmap="plasma",
             edgecolor="none",
             vmin=-vmax,
-            vmax=vmax
-        )
+            vmax=vmax)
 
         ax.set_title(
-            rf"$\psi_{{{title}}}$"
-        )
+            rf"$\psi_{{{title}}}$")
+
 
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_zticks([])
 
         ax.view_init(25,-60)
-
-    # ==========================================
-    # mapy 2D
-    # ==========================================
 
     for i,(rho,title) in enumerate(states_rho):
 
@@ -597,21 +568,19 @@ for system_name, res in systems:
             Y,
             rho,
             levels=100,
-            cmap="plasma"
-        )
+            cmap="plasma")
+        
 
         ax.set_title(
-            rf"$|\psi_{{{title}}}|^2$"
-        )
+            rf"$|\psi_{{{title}}}|^2$")
+        
 
         ax.set_xlim(-120,120)
         ax.set_ylim(-120,120)
 
         ax.set_aspect("equal")
 
-    # ==========================================
-    # radialna gęstość
-    # ==========================================
+    
 
     axr = fig.add_subplot(gs[0:3,4])
 
@@ -621,9 +590,8 @@ for system_name, res in systems:
     axr.plot(r,P2py,"--",lw=3,label="2py")
     axr.set_ylim(bottom=0)
     axr.set_title(
-        "Radialna gęstość\nprawdopodobieństwa",
-        fontsize=16
-    )
+        "Radialna gęstość\nprawdopodobieństwa",fontsize=16)
+    
 
     axr.set_xlabel("r (Bohr)")
     axr.set_ylabel(r"$r\int |\psi|^2 d\theta$")
@@ -631,16 +599,11 @@ for system_name, res in systems:
     axr.grid(alpha=0.3)
     axr.legend()
 
-    # ==========================================
-    # tabela
-    # ==========================================
-
     ax_table = fig.add_subplot(gs[3,:])
 
     ax_table.axis("off")
 
     table_data = [[
-
         f"{E1s:.4f}",
         f"{E2s:.4f}",
         f"{Epx:.4f}",
@@ -649,16 +612,14 @@ for system_name, res in systems:
         f"{b1:.2f}",
         f"{b2:.2f}",
         f"{bpx:.2f}",
-        f"{bpy:.2f}"
-
-    ]]
+        f"{bpy:.2f}"]]
+    
 
     table = ax_table.table(
 
         cellText=table_data,
 
         colLabels=[
-
             "E1s (eV)",
             "E2s (eV)",
             "E2px (eV)",
@@ -667,27 +628,18 @@ for system_name, res in systems:
             "b1",
             "b2",
             "bpx",
-            "bpy"
+            "bpy" ],cellLoc="center",loc="center")
 
-        ],
-
-        cellLoc="center",
-        loc="center"
-
-    )
+    
 
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1,1.5)
 
     fig.suptitle(
+        f"{system_name}\n",fontsize=18)
 
-        f"{system_name}\n",
-
-
-        fontsize=18
-
-    )
+    
 
     plt.tight_layout()
     plt.show()
