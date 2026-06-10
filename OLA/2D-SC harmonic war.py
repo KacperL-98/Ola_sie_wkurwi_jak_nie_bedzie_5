@@ -1,3 +1,4 @@
+#WERSJA WSTEPNA KODU CZ2 (NIE DO OCENY/TESTOWA)
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
