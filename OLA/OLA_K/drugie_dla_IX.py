@@ -4,7 +4,7 @@ from scipy.optimize import curve_fit
 plt.rcParams["font.family"] = "Times New Roman"
 
 def lorentzian(x, x0, gamma, A):
-    return A * (gamma**2 / ((x - x0)**2 + gamma**2))
+    return A*(gamma**2 /((x - x0)**2+gamma**2))
 
 
 def triple_lorentzian(x,
@@ -14,17 +14,16 @@ def triple_lorentzian(x,
                      a, b):
 
     return (
-        lorentzian(x, x01, g1, A1) +
-        lorentzian(x, x02, g2, A2) +
-        lorentzian(x, x03, g3, A3) +
-        a * x + b
+        lorentzian(x,x01,g1,A1)+
+        lorentzian(x,x02,g2,A2)+
+        lorentzian(x,x03,g3,A3)+
+        a*x+b
     )
 
-
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/x4.txt", "r") as fx:
+with open("/workspaces/Ola/OLA/x4.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/y4.txt", "r") as fy:
+with open("/workspaces/Ola/OLA/y4.txt", "r") as fy:
     y_data = np.array([float(line.strip()) for line in fy])
 
 
