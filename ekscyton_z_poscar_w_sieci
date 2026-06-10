@@ -1,0 +1,1424 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+from scipy.integrate import quad
+from scipy.integrate import simpson
+from scipy.optimize import minimize_scalar
+from scipy.special import j0
+
+plt.rcParams["font.family"] = "Times New Roman"
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# wczytywanie, otwieranie pliku
+def read_poscar(filename):
+    """
+    Wczytuje plik POSCAR i zamienia go na dane liczbowe.
+    """
+
+    
+    with open(filename, "r") as f:
+
+        lines = [line.strip() for line in f.readlines()]
+    
+    # ladowanie pliku do czytania
+
+    skala = float(lines[1])
+
+    # wektory sieci wypisane
+    wektory = np.array([list(map(float, lines[2].split())), list(map(float, lines[3].split())), list(map(float, lines[4].split()))]) * skala
+
+    atomy_sym = lines[5].split() # jakie rodzaje mamy atomy i ile 
+    atomy_ile = list(map(int, lines[6].split()))
+    atomy_total = sum(atomy_ile)
+
+    wsp_typ = lines[7].lower()
+    wsp = []
+
+    for i in range(atomy_total):
+        wsp.append(list(map(float, lines[8 + i].split()[:3])))
+
+    wsp = np.array(wsp)
+
+    if wsp_typ.startswith("direct"):
+        wspolrzedne = wsp @ wektory
+    else:
+        wspolrzedne = wsp
+
+    return wektory, atomy_sym, atomy_ile, wspolrzedne
+
+
+# od komorki 
+def build_atom_table(atomy_sym, atomy_ile, wspolrzedne):
+
+    atom_kom_el = []
+    # np. (W,1),(S,2)
+    for name, n in zip(atomy_sym, atomy_ile):
+
+        # dodajemy W 1 raz, S 2 razy itp
+        atom_kom_el.extend([name] * n)
+    atom_kom_el = np.array(atom_kom_el)
+
+    return atom_kom_el
+
+
+# zbieranie po osi z
+def zrob_warstwy(atom_kom_el, wspolrzedne, odl_warstwy=2.5):
+
+    z = wspolrzedne[:, 2] #wsp z atomow
+    sort_idx = np.argsort(z)
+    z_sorted = z[sort_idx]
+    warstwy = []
+    i_war = [sort_idx[0]]
+
+    for i in range(1, len(z_sorted)):
+
+        dz = z_sorted[i] - z_sorted[i - 1]  # roznica wysokosci miedzy atomami obok siebie
+
+        if dz < odl_warstwy:
+            i_war.append(sort_idx[i])
+        else:
+            warstwy.append(i_war)
+            i_war = [sort_idx[i]]
+
+    warstwy.append(i_war)
+    return warstwy
+
+
+def war_param(atom_kom_el, wspolrzedne, warstwy):
+
+    res = [] # raport parametrow dla kazdej warstwy
+
+    for i, layer in enumerate(warstwy):
+
+        layer_coords = wspolrzedne[layer]
+        typy_iwar = atom_kom_el[layer]
+        z_vals = layer_coords[:, 2] # porownywanie tylko wartosci z
+
+        # min i maks Z dla jednej warstwy,grubosc, srodek warstwy
+        z_min = np.min(z_vals)
+        z_max = np.max(z_vals)
+        grubosc = z_max - z_min
+        z_mean = np.mean(z_vals)
+        res.append({"layer_id": i,"indices": layer,"z_min": z_min, "z_max": z_max, "grubosc": grubosc, "z_mean": z_mean, "atom_kom_el": typy_iwar})
+
+    return res
+
+
+# odleglosci miedzy warstwami
+def war_odl(res):
+
+    odl = []
+    for i in range(len(res) - 1):
+
+        upper = res[i + 1]
+        lower = res[i]
+
+        d = upper["z_min"] - lower["z_max"] # odleglowc miedzy warstwami
+
+        odl.append(d)
+
+    return odl
+
+def plot_structure(atom_kom_el, wspolrzedne, warstwy):
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    pierwiastki = np.unique(atom_kom_el)
+
+    for atom in pierwiastki:
+
+        mask = atom_kom_el == atom
+
+        # scatter plot 3D
+        ax.scatter(wspolrzedne[mask, 0], wspolrzedne[mask, 1],wspolrzedne[mask, 2], label=atom, s=111) #XYZ 3D
+
+    for i, layer in enumerate(warstwy):
+
+        layer_coords = wspolrzedne[layer]
+
+        #srednia X Y Z
+        x_mean = np.mean(layer_coords[:, 0])
+        y_mean = np.mean(layer_coords[:, 1])
+        z_mean = np.mean(layer_coords[:, 2])
+        ax.text(x_mean, y_mean, z_mean, f"Layer {i}")
+    ax.set_xlabel("x [Å]")
+    ax.set_ylabel("y [Å]")
+    ax.set_zlabel("z [Å]")
+
+    ax.set_title("POSCAR wizualizacja")
+    ax.legend()
+    plt.show()
+
+
+# grid 2d
+def make_grid(wspolrzedne, resolution=200):
+
+    # wszystkie i zakres X Y
+    x = wspolrzedne[:, 0]
+    y = wspolrzedne[:, 1]
+    xmin, xmax = np.min(x), np.max(x)
+    ymin, ymax = np.min(y), np.max(y)
+
+    # siatka punktow X i Y
+    gx = np.linspace(xmin, xmax, resolution)
+    gy = np.linspace(ymin, ymax, resolution)
+    X, Y = np.meshgrid(gx, gy)
+    return X, Y
+
+# powiela komorki z pliku poscar, 
+# nie jest super dokladne jesli chodzi o to
+nx, ny, nz = 2, 2, 1
+make_file = False
+
+def powiel_siec(wektory, atom_types, wspolrzedne, nx=10, ny=10, nz=10):
+
+    new_coords = []
+    new_types = []
+
+    a1 = wektory[0]
+    a2 = wektory[1]
+    a3 = wektory[2]
+#dla kazdego kierunku osobno x y z
+    for ip in range(nx):
+        for iq in range(ny):
+            for ir in range(nz):
+
+                shift = ip * a1 + iq * a2 + ir * a3
+
+                for coord, t in zip(wspolrzedne, atom_types):
+                    new_coords.append(coord + shift)
+                    new_types.append(t)
+
+    return np.array(new_coords), np.array(new_types)
+
+
+#robi nowy plik poscar z wpisana na twardo wielokrotnoscia pliku w kazdym kierunku
+"""
+def nowy_poscar(filename, wektory, atom_types, wspolrzedne):
+
+    unique, counts = np.unique(atom_types, return_counts=True)
+
+    with open(filename, "w") as f:
+
+        f.write("Generated new poscar\n")
+        f.write("1.0\n")
+
+        for v in wektory:
+            f.write(f"{v[0]} {v[1]} {v[2]}\n")
+
+        f.write(" ".join(unique) + "\n")
+        f.write(" ".join(map(str, counts)) + "\n")
+
+        f.write("Cartesian\n")
+
+        for c in wspolrzedne:
+            f.write(f"{c[0]} {c[1]} {c[2]}\n")
+"""
+"""
+# plotowanie nowej komorki
+def plot_mul_kom(wektory, coords, atom_types, nx, ny, nz):
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    unique_atoms = np.unique(atom_types)
+
+    # atomy
+    for atom in unique_atoms:
+        mask = atom_types == atom
+        ax.scatter(coords[mask,0], coords[mask,1], coords[mask,2], label=atom, s=20)
+
+    a1, a2, a3 = wektory
+    def krawedzie(origin):
+        #wierzcholki
+        w0 = origin
+        w1 = origin + a1
+        w2 = origin + a2
+        w3 = origin + a3
+        w4 = origin + a1 + a2
+        w5 = origin + a1 + a3
+        w6 = origin + a2 + a3
+        w7 = origin + a1 + a2 + a3
+
+        # krawedzie
+        krawedzie = [(w0, w1), (w0, w2),(w0, w3),(w1, w4),(w1, w5),(w2, w4),
+                 (w2, w6),(w3, w5), (w3, w6), (w4, w7),(w5, w7), (w6, w7)]
+
+        for e in krawedzie:
+            ax.plot(
+                [e[0][0], e[1][0]], [e[0][1], e[1][1]], [e[0][2], e[1][2]], color="black", linewidth=0.6, alpha=0.6)
+    # siatka komórek
+    for i in range(nx + 1):
+        for j in range(ny + 1):
+            for k in range(nz + 1):
+
+                origin = i*a1 + j*a2 + k*a3
+                krawedzie(origin)
+    ax.legend()
+    plt.show()
+  """  
+# uruchomienie wszystkich funkcji przed liczeniem
+
+filename = r"C:\Users\Bartosz\Downloads\poscar-2"
+poscal_read = read_poscar
+wektory, atomy_sym, atomy_ile, wspolrzedne = read_poscar(filename)# wczytanie pliku
+#zmapowanie atomow
+atom_kom_el = build_atom_table(atomy_sym, atomy_ile, wspolrzedne)
+
+# grupowanie w warstwy
+warstwy = zrob_warstwy(atom_kom_el, wspolrzedne, odl_warstwy=2.5)
+
+# paramtetry warstw
+res = war_param(atom_kom_el, wspolrzedne, warstwy)
+
+#odleglosci miedzy warstwami
+odl = war_odl(res)
+
+make_grid(wspolrzedne,resolution=200)
+super_coords, super_types = powiel_siec(wektory, atom_kom_el, wspolrzedne, nx, ny, nz)
+#plot_mul_kom(wektory, super_coords, super_types, nx, ny, nz)
+
+"""
+if make_file:
+    nowy_poscar("POSCAR_supercell", wektory, super_types, super_coords)
+"""
+# printowanie
+print("Warstwy w pliku")
+
+for layer in res:
+    print(f"\nWarstwa {layer['layer_id']}")
+    print(f"z_min      = {layer['z_min']:.3f} Å")
+    print(f"z_max      = {layer['z_max']:.3f} Å")
+    print(f"grubosc    = {layer['grubosc']:.3f} Å")
+    print(f"srodek z   = {layer['z_mean']:.3f} Å")
+    print(f"atomy      = {np.unique(layer['atom_kom_el'])}")
+
+# odstepy miedzy warstwami
+
+print("Odleglosci")
+for i, d in enumerate(odl):
+    print(f"Layer {i} -> Layer {i+1} : {d:.3f} Å")
+
+
+X, Y = make_grid(wspolrzedne) #grid 2d
+
+print("Grid shape:")
+print(X.shape)
+plot_structure(atom_kom_el, wspolrzedne, warstwy)
+# STAŁE
+
+
+HA_TO_EV = 27.2114
+BOHR_TO_ANG = 0.529177
+
+
+# PARAMETRY HETEROSTRUKTURY
+
+
+eps_hbn = 4.9
+
+eps_ws2  = 6.12
+eps_wse2 = 6.48
+
+res = war_param(atom_kom_el, wspolrzedne, warstwy)
+
+ws2_layer  = res[0]
+wse2_layer = res[1]
+
+d_ws2_ang  = ws2_layer["grubosc"]
+d_wse2_ang = wse2_layer["grubosc"]
+
+z_ws2  = ws2_layer["z_mean"]
+z_wse2 = wse2_layer["z_mean"]
+
+d_inter_ang = abs(z_wse2 - z_ws2)
+
+
+"""
+# z POSCAR
+
+d_ws2_ang  = 3.098
+d_wse2_ang = 3.414
+
+# środki warstw
+
+z_ws2  = 3.463
+z_wse2 = 10.393
+"""
+
+
+# odległość międzywarstwowa
+d_intra_ws2 = abs(z_ws2-z_ws2)
+d_intra_wse2 = abs(z_wse2-z_wse2)
+d_inter_ang = abs(z_wse2-z_ws2)
+
+
+# MASY
+
+
+me_ws2_K = 0.27
+mh_ws2_K = 0.32
+
+me_wse2_K = 0.29
+mh_wse2_K = 0.36
+
+def mu(me,mh):
+    return me*mh/(me+mh)
+
+mu_ws2  = mu(me_ws2_K,mh_ws2_K)
+mu_wse2 = mu(me_wse2_K,mh_wse2_K)
+
+mu_inter = mu(me_wse2_K,mh_ws2_K)
+
+
+
+
+r_max = 400.0
+
+Nr = 400
+Ntheta = 360
+
+r = np.linspace(1e-12,r_max,Nr)
+theta = np.linspace(0,2*np.pi,Ntheta)
+
+R,Theta = np.meshgrid(r,theta,indexing="ij")
+
+X = R*np.cos(Theta)
+Y = R*np.sin(Theta)
+
+dr = r[1]-r[0]
+dtheta = theta[1]-theta[0]
+
+
+# funcja dielektryczna εeff(q)
+
+
+def gamma_plus(q):
+
+    return (
+        (1+np.exp(-2*d_wse2_ang*q))*eps_wse2
+        +
+        (1-np.exp(-2*d_wse2_ang*q))*eps_hbn
+    )
+
+def gamma_minus(q):
+
+    return (
+        (1-np.exp(-2*d_wse2_ang*q))*eps_wse2
+        +
+        (1+np.exp(-2*d_wse2_ang*q))*eps_hbn
+    )
+
+def A_q(q):
+
+    gp = gamma_plus(q)
+    gm = gamma_minus(q)
+
+    return (
+        (1-np.exp(-2*d_ws2_ang*q))
+        *
+        (
+            eps_ws2**2*gp
+            +
+            eps_hbn*eps_wse2*gm
+        )
+        +
+        (1+np.exp(-2*d_ws2_ang*q))
+        *
+        (
+            eps_hbn*eps_ws2*gp
+            +
+            eps_ws2*eps_wse2*gm
+        )
+    )
+
+def B_q(q):
+
+    term1 = (
+        (1-np.exp(-d_ws2_ang*q))*eps_hbn
+        +
+        (1+np.exp(-d_ws2_ang*q))*eps_ws2
+    )
+
+    term2 = (
+        (1+np.exp(-d_wse2_ang*q))*eps_wse2
+        +
+        (1-np.exp(-d_wse2_ang*q))*eps_hbn
+    )
+
+    return 2*term1*term2
+
+def eps_eff(q):
+
+    return A_q(q)/B_q(q)
+
+
+# POTENCJAŁY
+
+
+def V_real(rval,d_ang):
+
+    integrand = lambda q: (
+        np.exp(-q*d_ang)
+        *
+        j0(q*rval)
+        /
+        eps_eff(q)
+    )
+
+    val,_ = quad(
+        integrand,
+        1e-10,
+        20.0,
+        limit=300
+    )
+
+    return -val
+
+def build_potential(d_ang):
+
+    V = np.zeros_like(r)
+
+    for i,rr in enumerate(r):
+
+        V[i] = V_real(rr,d_ang)
+
+    return V
+
+print("Liczenie potencjałów...")
+
+V_ws2_r   = build_potential(d_intra_ws2)
+V_wse2_r  = build_potential(d_intra_wse2)
+V_inter_r = build_potential(d_inter_ang)
+
+
+
+def Vgrid_from_radial(Vr):
+
+    return np.interp(R,r,Vr)
+
+
+def integrate2d(f):
+
+    tmp = simpson(
+        f,
+        theta,
+        axis=1
+    )
+
+    return simpson(
+        tmp,
+        r
+    )
+
+def normalize(psi):
+
+    rho = np.abs(psi)**2 * R
+
+    I_theta = simpson(
+        rho,
+        theta,
+        axis=1
+    )
+
+    I = simpson(
+        I_theta,
+        r
+    )
+
+    return psi/np.sqrt(I)
+
+
+
+def laplacian(psi):
+
+    dpsi_dr = np.zeros_like(psi)
+
+    dpsi_dr[1:-1,:] = (
+        psi[2:,:]-psi[:-2,:]
+    )/(2*dr)
+
+    term_r = np.zeros_like(psi)
+
+    term_r[1:-1,:] = (
+        (
+            R[2:,:]*dpsi_dr[2:,:]
+            -
+            R[:-2,:]*dpsi_dr[:-2,:]
+        )/(2*dr)
+    )/R[1:-1,:]
+
+    term_theta = np.zeros_like(psi)
+
+    term_theta[:,1:-1] = (
+        psi[:,2:]
+        -
+        2*psi[:,1:-1]
+        +
+        psi[:,:-2]
+    )/dtheta**2
+
+    lap = term_r + term_theta/R**2
+
+    return lap
+
+
+# FUNKCJE PRÓBNE
+
+
+def psi_1s(b):
+
+    return normalize(
+        np.exp(-R/b)
+    )
+
+def psi_2s(b2,b1):
+
+    d = (b1+b2)/(2*b1)
+
+    return normalize(
+        (1-d*R/b2)
+        *
+        np.exp(-R/b2)
+    )
+
+def psi_2px(b):
+
+    return normalize(
+        R*np.cos(Theta)
+        *
+        np.exp(-R/b)
+    )
+
+def psi_2py(b):
+
+    return normalize(
+        R*np.sin(Theta)
+        *
+        np.exp(-R/b)
+    )
+
+
+# solver
+
+
+class ExcitonSolver:
+
+    def __init__(self,mu_eff,Vr):
+
+        self.mu = mu_eff
+
+        self.Vgrid = Vgrid_from_radial(Vr)
+
+    def energy(self,psi):
+
+        lap = laplacian(psi)
+
+        Tpsi = -(1/(2*self.mu))*lap
+
+        Hpsi = Tpsi + self.Vgrid*psi
+
+        return (
+            integrate2d(
+                np.conjugate(psi)
+                *
+                Hpsi
+                *
+                R
+            )
+            /
+            integrate2d(
+                np.conjugate(psi)
+                *
+                psi
+                *
+                R
+            )
+        ).real
+
+    def solve(self):
+        # 1s
+
+        res1 = minimize_scalar(
+            lambda b:
+            self.energy(
+                psi_1s(b)
+            ),
+            bounds=(0.001, 300),
+            method="bounded"
+        )
+
+        b1 = res1.x
+        E1 = res1.fun
+
+        #2s
+
+        res2s = minimize_scalar(
+            lambda b2:
+            self.energy(
+                psi_2s(b2, b1)
+            ),
+            bounds=(0.001, 300),
+            method="bounded"
+        )
+
+        b2 = res2s.x
+        E2s = res2s.fun
+
+       
+        #2px
+        respx = minimize_scalar(
+            lambda b:
+            self.energy(
+                psi_2px(b)
+            ),
+            bounds=(0.001, 300),
+            method="bounded"
+        )
+
+        bpx = respx.x
+        Epx = respx.fun
+
+    
+        #2py
+        respy = minimize_scalar(
+            lambda b:
+            self.energy(
+                psi_2py(b)
+            ),
+            bounds=(0.001, 300),
+            method="bounded"
+        )
+
+        bpy = respy.x
+        Epy = respy.fun
+
+        # energia wiązania
+
+        Es_px = Epx - E1
+        Es_py = Epy - E1
+
+        Ebind = 9.0 * (0.5 * Es_px + 0.5 * Es_py) / 8.0
+
+
+
+        psi1s_opt = psi_1s(b1)
+        psi2s_opt = psi_2s(b2, b1)
+
+        psi2px_opt = psi_2px(bpx)
+        psi2py_opt = psi_2py(bpy)
+
+        return {
+
+            "E1s": E1 * HA_TO_EV,
+            "E2s": E2s * HA_TO_EV,
+            "E2px": Epx * HA_TO_EV,
+            "E2py": Epy * HA_TO_EV,
+
+            "Ebind": Ebind * HA_TO_EV,
+
+            "b1": b1,
+            "b2": b2,
+            "bpx": bpx,
+            "bpy": bpy,
+
+            "psi1s": psi1s_opt,
+            "psi2s": psi2s_opt,
+            "psi2px": psi2px_opt,
+            "psi2py": psi2py_opt
+        }
+
+
+solver_ws2 = ExcitonSolver(
+    mu_ws2,
+    V_ws2_r
+)
+
+solver_wse2 = ExcitonSolver(
+    mu_wse2,
+    V_wse2_r
+)
+
+solver_inter = ExcitonSolver(
+    mu_inter,
+    V_inter_r
+)
+
+res_ws2 = solver_ws2.solve()
+res_wse2 = solver_wse2.solve()
+res_inter = solver_inter.solve()
+
+# WCZYTANIE POSCAR
+
+#atom_types, coords = poscal_read(POSCAR_PATH)
+#atom_types, coords = poscal_read(filename)
+#atom_types = np.array(atom_types)
+#coords = np.array(coords)
+atom_types = np.array(atom_kom_el)
+coords = np.array(wspolrzedne)
+# pierwszy atom W jako centrum ekscytonu
+
+w_indices = np.where(atom_types == "W")[0]
+
+x0 = coords[w_indices[0],0]
+y0 = coords[w_indices[0],1]
+
+print("Exciton center:", x0, y0)
+from matplotlib.gridspec import GridSpec
+
+systems = [
+
+    ("WS$_2$", res_ws2),
+    ("WSe$_2$", res_wse2),
+    ("Interlayer Exciton", res_inter)
+
+]
+
+for system_name, res in systems:
+    # wszystkie param ukladu w jedno miejsce
+    # ffalowe
+    psi1s_opt = res["psi1s"]
+    psi2s_opt = res["psi2s"]
+    psi2px_opt = res["psi2px"]
+    psi2py_opt = res["psi2py"]
+
+
+    # energie
+    E1s = res["E1s"]
+    E2s = res["E2s"]
+    Epx = res["E2px"]
+    Epy = res["E2py"]
+    Ebind = res["Ebind"]
+    
+    
+    
+    #promienie
+    b1 = res["b1"]
+    b2 = res["b2"]
+    bpx = res["bpx"]
+    bpy = res["bpy"]
+
+
+    # gestosc prawdopodobienstwa
+    rho1s  = np.abs(psi1s_opt)**2
+    rho2s  = np.abs(psi2s_opt)**2
+    rho2px = np.abs(psi2px_opt)**2
+    rho2py = np.abs(psi2py_opt)**2
+
+    # przejscie na radialną
+    P1s = r * simpson(rho1s, theta, axis=1)
+    P2s = r * simpson(rho2s, theta, axis=1)
+    P2px = r * simpson(rho2px, theta, axis=1)
+    P2py = r * simpson(rho2py, theta, axis=1)
+
+    states_rho = [
+
+        (rho1s, "1s"),
+        (rho2s, "2s"),
+        (rho2px, "2px"),
+        (rho2py, "2py")
+
+    ]
+
+    states_psi = [
+
+        (psi1s_opt, "1s"),
+        (psi2s_opt, "2s"),
+        (psi2px_opt, "2px"),
+        (psi2py_opt, "2py")
+
+    ]
+    
+    #wizualizacja
+    
+    
+    fig = plt.figure(figsize=(18,13))
+
+    gs = GridSpec(4,5,
+        figure=fig,
+        width_ratios=[1,1,1,1,1.4],
+        height_ratios=[1,1,1,0.4]
+    )
+
+    #gestosc prawd
+    for i,(rho,title) in enumerate(states_rho):
+
+        ax = fig.add_subplot(
+            gs[0,i],
+            projection="3d"
+        )
+
+        ax.plot_surface(
+            X,Y,rho,
+            cmap="plasma",
+            edgecolor="none"
+        )
+
+        ax.set_title(
+            rf"$|\psi_{{{title}}}|^2$"
+        )
+
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
+
+        ax.view_init(25,-60)
+
+    
+    #ffalowa
+    for i,(psi,title) in enumerate(states_psi):
+
+        vmax = np.max(np.abs(psi))
+
+        ax = fig.add_subplot(
+            gs[1,i],
+            projection="3d")
+
+        ax.plot_surface(
+            X,
+            Y,
+            psi,
+            cmap="plasma",
+            edgecolor="none",
+            vmin=-vmax,
+            vmax=vmax)
+
+        ax.set_title(
+            rf"$\psi_{{{title}}}$")
+
+
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
+
+        ax.view_init(25,-60)
+
+
+    #rzut z gory
+    for i,(rho,title) in enumerate(states_rho):
+
+        ax = fig.add_subplot(gs[2,i])
+
+        contour = ax.contourf(
+            X,
+            Y,
+            rho,
+            levels=100,
+            cmap="plasma")
+        
+
+        ax.set_title(
+            rf"$|\psi_{{{title}}}|^2$")
+        
+
+        ax.set_xlim(-120,120)
+        ax.set_ylim(-120,120)
+
+        ax.set_aspect("equal")
+
+
+    #rozkklady radialne
+    axr = fig.add_subplot(gs[0:3,4])
+
+    axr.plot(r,P1s,lw=3,label="1s")
+    axr.plot(r,P2s,lw=3,label="2s")
+    axr.plot(r,P2px,lw=3,label="2px")
+    axr.plot(r,P2py,"--",lw=3,label="2py")
+    axr.set_ylim(bottom=0)
+    axr.set_title(
+        "Radialna gęstość\nprawdopodobieństwa",fontsize=16)
+    
+
+    axr.set_xlabel("r (Bohr)")
+    axr.set_ylabel(r"$r\int |\psi|^2 d\theta$")
+
+    axr.grid(alpha=0.3)
+    axr.legend()
+    
+    #tabela wynikow
+    ax_table = fig.add_subplot(gs[3,:])
+
+    ax_table.axis("off")
+
+    table_data = [[
+        f"{E1s:.4f}",
+        f"{E2s:.4f}",
+        f"{Epx:.4f}",
+        f"{Epy:.4f}",
+        f"{Ebind:.4f}",
+        f"{b1:.2f}",
+        f"{b2:.2f}",
+        f"{bpx:.2f}",
+        f"{bpy:.2f}"]]
+    
+
+    table = ax_table.table(
+
+        cellText=table_data,
+
+        colLabels=[
+            "E1s (eV)",
+            "E2s (eV)",
+            "E2px (eV)",
+            "E2py (eV)",
+            "Ebind (eV)",
+            "b1",
+            "b2",
+            "bpx",
+            "bpy" ],cellLoc="center",loc="center")
+
+    
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1,1.5)
+
+    fig.suptitle(
+        f"{system_name}\n",fontsize=18)
+
+    
+
+    plt.tight_layout()
+    plt.show()
+# Projekcja 1s dla:
+# WS2 / WSe2 / INTERLAYER
+
+def project_exciton_to_atoms(psi1s):
+
+    density_r = simpson(
+        np.abs(psi1s)**2,
+        theta,
+        axis=1
+    )
+    # inkorporacja wielkosci do struktury z POSCAR
+    #gestozc prawdopodobienstwa dla kazdego atomu
+    atom_density = []
+
+    for x, y, z in coords:
+
+        rr = np.sqrt(
+            (x - x0)**2 +
+            (y - y0)**2
+        )
+
+        rho = np.interp(
+            rr,
+            r,
+            density_r,
+            left=0,
+            right=0
+        )
+        #zapisanie wartosci dla atomu i zlozenie tablicy wynikow
+        atom_density.append(rho)
+
+    return np.array(atom_density)
+
+
+# osobno dla dowolnego stanu, nie tylko 1z
+def project_state_to_atoms(psi_state):
+
+    density_r = simpson(
+        np.abs(psi_state)**2,
+        theta,
+        axis=1
+    )
+
+    atom_density = []
+
+    for x, y, z in coords:
+
+        rr = np.sqrt(
+            (x - x0)**2 +
+            (y - y0)**2
+        )
+
+        rho = np.interp(
+            rr,
+            r,
+            density_r,
+            left=0,
+            right=0
+        )
+
+        atom_density.append(rho)
+
+    return np.array(atom_density)
+
+#projekcja dla 2p, dodatkowo (nie uwzglednia znaku, x i y takie same)
+
+dens_ws2_2px = project_state_to_atoms(
+    res_ws2["psi2px"]
+)
+
+dens_wse2_2px = project_state_to_atoms(
+    res_wse2["psi2px"]
+)
+
+dens_inter_2px = project_state_to_atoms(
+    res_inter["psi2px"]
+)
+
+dens_ws2_2py = project_state_to_atoms(
+    res_ws2["psi2py"]
+)
+
+dens_wse2_2py = project_state_to_atoms(
+    res_wse2["psi2py"]
+)
+
+dens_inter_2py = project_state_to_atoms(
+    res_inter["psi2py"]
+)
+
+#wizualizacja dla 2px
+fig = plt.figure(figsize=(18,6))
+
+datasets = [
+
+    ("WS2 2px", dens_ws2_2px),
+    ("WSe2 2px", dens_wse2_2px),
+    ("Interlayer 2px", dens_inter_2px)
+
+]
+
+for i,(title,dens) in enumerate(datasets):
+
+    ax = fig.add_subplot(
+        1,3,i+1,
+        projection="3d"
+    )
+    sizes = 30 + 600*dens/dens.max()
+
+    sc = ax.scatter(
+        coords[:,0],
+        coords[:,1],
+        coords[:,2],
+        c=dens,
+        s=sizes,
+        cmap="magma"
+    )
+
+    ax.set_title(title)
+
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+
+    plt.colorbar(
+        sc,
+        ax=ax,
+        shrink=0.7
+    )
+ax.view_init(25,-60) #kąt obserwacji struktury 3d
+plt.tight_layout()
+plt.show()
+
+#wizualizacja dla 2py
+fig = plt.figure(figsize=(18,6))
+
+datasets = [
+
+    ("WS2 2py", dens_ws2_2py),
+    ("WSe2 2py", dens_wse2_2py),
+    ("Interlayer 2py", dens_inter_2py)
+
+]
+
+for i,(title,dens) in enumerate(datasets):
+
+    ax = fig.add_subplot(
+        1,3,i+1,
+        projection="3d"
+    )
+
+    sizes = 30 + 600*dens/dens.max()
+
+    sc = ax.scatter(
+        coords[:,0],
+        coords[:,1],
+        coords[:,2],
+        c=dens,
+        s=sizes,
+        cmap="magma"
+    )
+
+    ax.set_title(title)
+
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+
+    plt.colorbar(
+        sc,
+        ax=ax,
+        shrink=0.7
+    )
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+#wizualizacja dla 1s metodą ogólną 
+dens_ws2 = project_exciton_to_atoms(
+    res_ws2["psi1s"]
+)
+
+dens_wse2 = project_exciton_to_atoms(
+    res_wse2["psi1s"]
+)
+
+dens_inter = project_exciton_to_atoms(
+    res_inter["psi1s"]
+)
+fig = plt.figure(figsize=(18,6))
+
+datasets = [
+
+    ("WS2 intralayer 1s", dens_ws2),
+    ("WSe2 intralayer 1s", dens_wse2),
+    ("Interlayer 1s", dens_inter)
+
+]
+
+for i, (title, dens) in enumerate(datasets):
+
+    ax = fig.add_subplot(
+        1,
+        3,
+        i+1,
+        projection="3d"
+    )
+
+    sizes = 30 + 600 * dens / dens.max()
+
+    sc = ax.scatter(
+        coords[:,0],
+        coords[:,1],
+        coords[:,2],
+        c=dens,
+        s=sizes,
+        cmap="magma"
+    )
+
+    ax.set_title(title)
+
+    ax.set_xlabel("x [Å]")
+    ax.set_ylabel("y [Å]")
+    ax.set_zlabel("z [Å]")
+
+    plt.colorbar(
+        sc,
+        ax=ax,
+        shrink=0.65
+    )
+
+plt.tight_layout()
+plt.show()
+
+"""
+from scipy.interpolate import griddata
+
+grid_x = np.linspace(
+    coords[:,0].min(),
+    coords[:,0].max(),
+    300
+)
+
+grid_y = np.linspace(
+    coords[:,1].min(),
+    coords[:,1].max(),
+    300
+)
+
+Xg, Yg = np.meshgrid(
+    grid_x,
+    grid_y
+)
+
+rho_grid = griddata(
+    (coords[:,0], coords[:,1]),
+    atom_density,
+    (Xg, Yg),
+    method="cubic"
+)
+
+plt.figure(figsize=(8,7))
+
+plt.contourf(
+    Xg,
+    Yg,
+    rho_grid,
+    levels=120,
+    cmap="viridis"
+)
+
+plt.colorbar(
+    label=r"$|\psi|^2$"
+)
+
+plt.xlabel("x [Å]")
+plt.ylabel("y [Å]")
+
+plt.axis("equal")
+
+plt.title(
+    "Continuous Exciton Density (Top View)"
+)
+
+plt.tight_layout()
+plt.show()
+
+
+
+fig = plt.figure(figsize=(18,6))
+
+views = [
+
+    ("Top XY", 90, -90),
+    ("Side XZ", 0, -90),
+    ("Side YZ", 0, 0)
+
+]
+
+for i,(title,elev,azim) in enumerate(views):
+
+    ax = fig.add_subplot(
+        1,3,i+1,
+        projection="3d"
+    )
+
+    sc = ax.scatter(
+        coords[:,0],
+        coords[:,1],
+        coords[:,2],
+        c=dens_inter,
+        s=30 + 600*dens_inter/dens_inter.max(),
+        cmap="magma"
+    )
+
+    ax.view_init(
+        elev=elev,
+        azim=azim
+    )
+
+    ax.set_title(title)
+
+    ax.set_xlabel("x [Å]")
+    ax.set_ylabel("y [Å]")
+    ax.set_zlabel("z [Å]")
+
+plt.tight_layout()
+plt.show()
+
+#ikz y
+plt.scatter(
+    coords[:,0],
+    coords[:,1],
+    c=dens_inter,
+    s=30 + 600*dens_inter/dens_inter.max(),
+    cmap="magma"
+)
+
+plt.axis("equal")
+plt.xlabel("x [Å]")
+plt.ylabel("y [Å]")
+plt.title("Top view (XY)")
+plt.colorbar()
+plt.show()
+
+
+#ikz z 
+
+plt.scatter(
+    coords[:,0],
+    coords[:,2],
+    c=dens_inter,
+    s=30 + 600*dens_inter/dens_inter.max(),
+    cmap="magma"
+)
+
+plt.axis("equal")
+plt.xlabel("x [Å]")
+plt.ylabel("z [Å]")
+plt.title("Side view (XZ)")
+plt.colorbar()
+plt.show()
+
+
+#yz
+
+plt.scatter(
+    coords[:,1],
+    coords[:,2],
+    c=dens_inter,
+    s=30 + 600*dens_inter/dens_inter.max(),
+    cmap="magma"
+)
+
+plt.axis("equal")
+plt.xlabel("y [Å]")
+plt.ylabel("z [Å]")
+plt.title("Side view (YZ)")
+plt.colorbar()
+plt.show()
+
+
+from scipy.interpolate import griddata
+
+datasets = [
+
+    ("WS2 intralayer 1s", dens_ws2),
+    ("WSe2 intralayer 1s", dens_wse2),
+    ("Interlayer 1s", dens_inter)
+
+]
+
+fig, axes = plt.subplots(1,3,figsize=(18,6))
+
+for ax,(title,dens) in zip(axes,datasets):
+
+    grid_x = np.linspace(
+        coords[:,0].min(),
+        coords[:,0].max(),
+        300
+    )
+
+    grid_y = np.linspace(
+        coords[:,1].min(),
+        coords[:,1].max(),
+        300
+    )
+
+    Xg,Yg = np.meshgrid(grid_x,grid_y)
+
+    rho_grid = griddata(
+        (coords[:,0],coords[:,1]),
+        dens,
+        (Xg,Yg),
+        method="cubic"
+    )
+
+    im = ax.contourf(
+        Xg,
+        Yg,
+        rho_grid,
+        levels=120,
+        cmap="viridis"
+    )
+
+    ax.set_title(title)
+    ax.set_aspect("equal")
+
+    fig.colorbar(im,ax=ax)
+
+plt.tight_layout()
+plt.show()
+"""
+
