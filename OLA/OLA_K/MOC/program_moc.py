@@ -6,13 +6,13 @@ from scipy.signal import find_peaks, savgol_filter
 plt.rcParams["font.family"] = "Times New Roman"
 
 
-def lorentzian(x, x0, gamma, A):
-    return A * (gamma**2 / ((x - x0)**2 + gamma**2))
+def lorentzian(x,x0, gamma,A):
+    return A*(gamma**2/((x - x0)**2+gamma**2))
 
 def wiele_lorentzow(x, *params):
 
-    n = (len(params)-2)//3
-    y = np.zeros_like(x)
+    n=(len(params)-2)//3
+    y=np.zeros_like(x)
 
     for i in range(n):
 
@@ -30,11 +30,11 @@ def wiele_lorentzow(x, *params):
 def pole_lorentza(A, gamma):
     return np.pi*A*gamma
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/xc.txt", "r") as fx:
+with open("/workspaces/Ola.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
 pliki = [
-    "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/1a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/2a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/3a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/4a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/5a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/6a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/7a.txt", "/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/MOC/8a.txt"
+    "/workspaces/Ola/OLA/MOC/1a.txt", "/workspaces/Ola/OLA/MOC/2a.txt", "/workspaces/Ola/OLA/MOC/3a.txt", "/workspaces/Ola/OLA/MOC/4a.txt", "/workspaces/Ola/OLA/MOC/5a.txt", "/workspaces/Ola/OLA/MOC/6a.txt", "/workspaces/Ola/OLA/MOC/7a.txt", "/workspaces/Ola/OLA/MOC/8a.txt"
 ]
 
 #os x (moce laserow)
@@ -60,15 +60,10 @@ for plik in pliki:
     with open(plik, "r") as fy:
         y_data = np.array([float(line.strip()) for line in fy])
 
-    y_smooth = savgol_filter(y_data, 31, 3)
+    y_smooth=savgol_filter(y_data,31, 3)
 
     #szukanie pików
-    peaks, properties = find_peaks(
-        y_smooth,
-        prominence=np.max(y_smooth)*0.08,
-        distance=120,
-        width=15
-    )
+    peaks, properties=find_peaks( y_smooth, prominence=np.max(y_smooth)*0.08,distance=120,width=15)
 
     #sa 2 to tu sobie mozemy uzyc takiego warunku
     if len(peaks) > 2:
@@ -108,13 +103,7 @@ for plik in pliki:
     upper_bounds.extend([ np.inf,  np.inf])
 
     popt, pcov = curve_fit(
-        wiele_lorentzow,
-        x_data,
-        y_data,
-        p0=initial_guess,
-        bounds=(lower_bounds, upper_bounds),
-        maxfev=50000
-    )
+        wiele_lorentzow, x_data, y_data, p0=initial_guess, bounds=(lower_bounds, upper_bounds), maxfev=50000)
 
     n_peaks = (len(popt)-2)//3
    #dane_wyswietlane
@@ -149,23 +138,23 @@ y_fit_ix2 = np.log10(pole_ix2[-N:])
 wspolczynnik1 = np.polyfit(x_fit, y_fit_ix1, 1) #gotowa_funkcja
 wspolczynnik2 = np.polyfit(x_fit, y_fit_ix2, 1)
 
-alpha1 = wspolczynnik1[0]
-alpha2 = wspolczynnik2[0]
+alpha1= wspolczynnik1[0]
+alpha2= wspolczynnik2[0]
 #zadanie_zaleznosci_liniowej
-x_line = np.linspace(moc[-N], moc[-1], 200)
+x_line= np.linspace(moc[-N], moc[-1], 200)
 
-y_line1 = 10**(wspolczynnik1[0]*np.log10(x_line) + wspolczynnik1[1])
-y_line2 = 10**(wspolczynnik2[0]*np.log10(x_line) + wspolczynnik2[1])
+y_line1=10**(wspolczynnik1[0]*np.log10(x_line) + wspolczynnik1[1])
+y_line2=10**(wspolczynnik2[0]*np.log10(x_line) + wspolczynnik2[1])
 
 plt.figure(figsize=(5,7))
 plt.scatter(
     moc, pole_ix1, color='blue', s=70,label=f'IX1   α1={alpha1:.2f}'
 )
 plt.scatter(
-    moc, pole_ix2, color='red', s=70,label=f'IX2   α2={alpha2:.2f}'
+    moc, pole_ix2, color='red',s=70,label=f'IX2   α2={alpha2:.2f}'
 )
 plt.plot(
-    x_line, y_line1, '--', color='blue', linewidth=2
+    x_line, y_line1,'--',color='blue',linewidth=2
 )
 plt.plot(
     x_line, y_line2, '--', color='red', linewidth=2
