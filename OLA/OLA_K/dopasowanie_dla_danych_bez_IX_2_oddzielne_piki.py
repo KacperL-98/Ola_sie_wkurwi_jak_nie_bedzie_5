@@ -14,15 +14,15 @@ def double_lorentzian(x,
                       a, b):
 
     return (
-        lorentzian(x, x01, g1, A1) +
-        lorentzian(x, x02, g2, A2) +
-        a * x + b
+        lorentzian(x,x01,g1,A1)+
+        lorentzian(x,x02,g2,A2)+
+        a*x+b
     )
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/x1_2.txt", "r") as fx:
+with open("/workspaces/Ola/OLA/x1_2.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/x2_2.txt", "r") as fy:
+with open("/workspaces/Ola/OLA/x2_2.txt", "r") as fy:
     y_data = np.array([float(line.strip()) for line in fy])
 
 
@@ -72,21 +72,10 @@ background = popt[6] * x_data + popt[7]
 
 plt.figure(figsize=(8,5))
 
-plt.scatter(
-    x_data,
-    y_data,
-    s=5,
-    color='blue',
-    label='Dane pomiarowe'
+plt.scatter(x_data, y_data,s=5,color='blue',label='Dane pomiarowe'
 )
 
-plt.plot(
-    x_data,
-    y_fit,
-    'r',
-    linewidth=2,
-    label='Dopasowanie Lorentzem'
-)
+plt.plot(x_data,y_fit,'r', linewidth=2,label='Dopasowanie Lorentzem')
 
 
 plt.plot(x_data, y1, '--', linewidth=2, label='Dopasowanie dla WS$_{0.5}$Se$_{1.5}$', color="green")
@@ -109,21 +98,12 @@ plt.title(
 plt.xticks(fontsize=14)
 plt.yticks(fontsize=14)
 
-
 plt.minorticks_on()
 
-plt.grid(
-    which='major',
-    linestyle='-',
-    linewidth=0.5,
-    color='black'
+plt.grid( which='major', linestyle='-',linewidth=0.5,color='black'
 )
 
-plt.grid(
-    which='minor',
-    linestyle='--',
-    linewidth=0.5,
-    color='grey'
+plt.grid( which='minor',linestyle='--', linewidth=0.5, color='grey'
 )
 
 plt.legend(fontsize=12)
