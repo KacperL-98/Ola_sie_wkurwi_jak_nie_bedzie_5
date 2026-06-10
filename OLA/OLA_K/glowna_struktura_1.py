@@ -14,17 +14,16 @@ def triple_lorentzian(x,
                      a, b):
 
     return (
-        lorentzian(x, x01, g1, A1) +
-        lorentzian(x, x02, g2, A2) +
-        lorentzian(x, x03, g3, A3) +
-        a * x + b
+        lorentzian(x,x01,g1,A1)+
+        lorentzian(x,x02,g2,A2)+
+        lorentzian(x,x03,g3,A3)+
+        a*x+b
     )
 
-
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/xg.txt", "r") as fx:
+with open("/workspaces/Ola/OLA/xg.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/yg.txt", "r") as fy:
+with open("/workspaces/Ola/OLA/yg.txt", "r") as fy:
     y_data = np.array([float(line.strip()) for line in fy])
 
 
@@ -128,7 +127,6 @@ axins = inset_axes(
     bbox_transform=ax.transAxes,
     loc='lower left'
 )
-
 
 axins.scatter(x_data, y_data, s=10)
 axins.plot(x_data, y_fit, 'r', linewidth=1.5)
