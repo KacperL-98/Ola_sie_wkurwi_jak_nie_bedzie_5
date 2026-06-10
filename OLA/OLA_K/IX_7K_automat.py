@@ -8,7 +8,7 @@ from scipy.signal import find_peaks, savgol_filter #automatyczne znajdowanie pik
 #plt.rcParams["font.family"] = "Times New Roman"
 
 def lorentzian(x, x0, gamma, A):
-    return A * (gamma**2 / ((x - x0)**2 + gamma**2))
+    return A*(gamma**2 /((x - x0)**2+gamma**2))
 
 #funkcja buduje sumę dowolnej liczby funkcji Lorentza + liniowe tło
 def wiele_lorentzow(x, *params):
@@ -28,26 +28,22 @@ def wiele_lorentzow(x, *params):
 
     return y+a*x+b
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/x.txt", "r") as fx:
+with open("/workspaces/Ola/OLA/x.txt", "r") as fx:
     x_data = np.array([float(line.strip()) for line in fx])
 
-with open("/workspaces/Ola_sie_wkurwi_jak_nie_bedzie_5/OLA/6.txt", "r") as fy:
+with open("/workspaces/Ola/OLA/6.txt", "r") as fy:
     y_data = np.array([float(line.strip()) for line in fy])
 
-mask = (x_data > 1.35) & (x_data < 1.70)
+mask=(x_data > 1.35) & (x_data < 1.70)
 
-x_data = x_data[mask]
-y_data = y_data[mask]
+x_data=x_data[mask]
+y_data=y_data[mask]
 
 y_smooth = savgol_filter(y_data, 31, 3)
 
 #służy do znajdowania maksimów lokalnych w sygnale
 peaks, properties = find_peaks(
-    y_smooth,
-    prominence=np.max(y_smooth)*0.12, #jak bardzo pik wystaje ponad otoczenie
-    distance=120,
-    width=15
-)
+    y_smooth,prominence=np.max(y_smooth)*0.12, #jak bardzo pik wystaje ponad otoczeniedistance=120,width=15)
 
 print("\nLiczba znalezionych pików:", len(peaks))
 
@@ -83,10 +79,8 @@ for peak in peaks:
     lower_bounds.extend([xmin, 0.001, 0])
     upper_bounds.extend([xmax, 0.1, np.max(y_data)*10])
 
-
 lower_bounds.extend([-np.inf, -np.inf])
 upper_bounds.extend([ np.inf,  np.inf])
-
 
 print("initial_guess =", len(initial_guess))
 print("lower_bounds  =", len(lower_bounds))
@@ -94,14 +88,7 @@ print("upper_bounds  =", len(upper_bounds))
 
 
 popt, pcov = curve_fit(
-    wiele_lorentzow,
-    x_data,
-    y_data,
-    p0=initial_guess,
-    bounds=(lower_bounds, upper_bounds),
-    maxfev=50000
-)
-
+    wiele_lorentzow, x_data,y_data,p0=initial_guess,bounds=(lower_bounds, upper_bounds), maxfev=50000)
 n_peaks = (len(popt)-2)//3
 
 print("\n=== PARAMETRY DOPASOWANIA ===\n")
@@ -125,21 +112,11 @@ y_fit = wiele_lorentzow(x_data, *popt)
 #tworzeie wykresu
 plt.figure(figsize=(9,6))
 
-plt.scatter(
-    x_data,
-    y_data,
-    s=12,
-    label='Dane pomiarowe'
-)
+plt.scatter( x_data, y_data, s=12, label='Dane pomiarowe')
 
 # fit
 plt.plot(
-    x_data,
-    y_fit,
-    'r',
-    linewidth=2.5,
-    label='Dopasowanie funkcją Lorentza'
-)
+    x_data,  y_fit, 'r', linewidth=2.5, label='Dopasowanie funkcją Lorentza')
 colors = ["magenta", "orange", "blue", "orange", "purple"]
 for i in range(n_peaks):
 
@@ -154,21 +131,9 @@ for i in range(n_peaks):
     )
 
 #dodatek_pokazuje_gdzie_sa
-plt.plot(
-    x_data[peaks],
-    y_smooth[peaks],
-    ".",
-    color='black',
-    markersize=18,
-    label='Wykryte piki'
+plt.plot( x_data[peaks],  y_smooth[peaks], ".", color='black', markersize=18, label='Wykryte piki'
 )
-plt.vlines(
-    x_data[peaks],
-    ymin=0,
-    ymax=y_smooth[peaks],
-    colors='red',
-    linestyles='dashed',
-    linewidth=1.5
+plt.vlines(  x_data[peaks], ymin=0,  ymax=y_smooth[peaks], colors='red',  linestyles='dashed', linewidth=1.5
 )
 
 plt.xlabel("Energia (eV)", fontsize=16)
@@ -192,10 +157,8 @@ plt.legend(fontsize=14)
 #ymin = -10
 #ymax=900
 
-
 #plt.xlim(xmin, xmax)
 #plt.ylim(ymin, ymax)
-
 
 plt.legend(fontsize=12)
 plt.tight_layout()
